@@ -123,6 +123,31 @@ function getRepoListFromAPISearch(search, org) {
     return JSON.parse(queryResult).data;
   }
 
+  function fzfGetRepos(org) {
+    /*
+    let command = `gh repo list -L100 ${org} --json name --jq '.[] | .name' | fzf -m`;
+    let result = shell.exec(command, { silent: false });
+    if (result.code !== 0) process.exit(result.code);
+    return result.stdout.replace(/\s+$/,'')  
+    */
+  
+    let queryResult = executeQuery(allRepos(org));
+    let result = queryResult.organization.repositories.edges.map(r => r.node.name).join("\n");
+    const name = tmp.tmpNameSync();
+    fs.writeFileSync(name, result)
+    //console.log('Created temporary filename: ', name);
+    let command = `cat ${name} | fzf -m --prompt='${org}:Choose repos to download> '`;
+    let fzfresult = shell.exec(command, { silent: false });
+    if (fzfresult.code !== 0) {
+      console.error(`There were errors ${fzfresult.code}`);
+      process.exit(rfzfesult.code);
+    }
+    let repoSpec =  fzfresult.stdout.replace(/\s+$/,'').split(/\s+/).join(',');
+    //console.log(`----\n${repoSpec}\n----`);
+    return repoSpec;
+  }
+  
+
   //console.log('getRepoListFromAPISearch '+search+" "+org)
   if (!org) {
     console.error("Aborting. Specify a GitHub organization");
@@ -338,31 +363,6 @@ function fzfGetOrg() {
 }
 exports.fzfGetOrg = fzfGetOrg;
 
-function fzfGetRepos(org) {
-
-  /*
-  let command = `gh repo list -L100 ${org} --json name --jq '.[] | .name' | fzf -m`;
-  let result = shell.exec(command, { silent: false });
-  if (result.code !== 0) process.exit(result.code);
-  return result.stdout.replace(/\s+$/,'')  
-  */
-
-  let queryResult = executeQuery(allRepos(org));
-  let result = queryResult.organization.repositories.edges.map(r => r.node.name).join("\n");
-  const name = tmp.tmpNameSync();
-  fs.writeFileSync(name, result)
-  //console.log('Created temporary filename: ', name);
-  let command = `cat ${name} | fzf -m --prompt='${org}:Choose repos to download> '`;
-  let fzfresult = shell.exec(command, { silent: false });
-  if (fzfresult.code !== 0) {
-    console.error(`There were errors ${fzfresult.code}`);
-    process.exit(rfzfesult.code);
-  }
-  let repoSpec =  fzfresult.stdout.replace(/\s+$/,'').split(/\s+/).join(',');
-  //console.log(`----\n${repoSpec}\n----`);
-  return repoSpec;
-}
-exports.fzfGetRepos = fzfGetRepos;
 
 
 function getRepoList(options, org) {
@@ -456,4 +456,4 @@ exports.addSubmodules = addSubmodules;
 
 
 //fzfGetOrg();
-//console.log(fzfGetRepos('ULL-MFP-AET-2122'));
+//getRepoListFromAPISearch('.', 'ULL-ESIT-DMSI-1920')
