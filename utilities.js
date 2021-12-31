@@ -74,8 +74,10 @@ function getUserLogin() {
 }
 exports.getUserLogin = getUserLogin;
 
-function getRepoListFromAPISearch(search, org) {
-  let query;
+function getRepoListFromAPISearch(options, org) {
+  let search = options.search;
+  let regexp = options.regexp;
+  //let query;
   const allRepos = (org) => `
   query($endCursor: String) {
     organization(login: "${org}") {
@@ -123,7 +125,7 @@ function getRepoListFromAPISearch(search, org) {
     return JSON.parse(queryResult).data;
   }
 
-  function fzfGetRepos(org) {
+  function fzfGetRepos(org, regexp) {
     /*
     let command = `gh repo list -L100 ${org} --json name --jq '.[] | .name' | fzf -m`;
     let result = shell.exec(command, { silent: false });
@@ -132,17 +134,29 @@ function getRepoListFromAPISearch(search, org) {
     */
   
     let queryResult = executeQuery(allRepos(org));
-    let result = queryResult.organization.repositories.edges.map(r => r.node.name).join("\n");
+    let result = queryResult.organization.repositories.edges.map(r => r.node.name);
+
+    if (regexp) {
+      regexp = new RegExp(regexp,'i');
+      result = result.filter(rn => {
+        return regexp.test(rn)
+      });  
+    }
+
+    result = result.join("\n");
+
     const name = tmp.tmpNameSync();
     fs.writeFileSync(name, result)
+
     //console.log('Created temporary filename: ', name);
     let command = `cat ${name} | fzf -m --prompt='${org}:Choose repos to download> '`;
     let fzfresult = shell.exec(command, { silent: false });
-    if (fzfresult.code !== 0) {
-      console.error(`There were errors ${fzfresult.code}`);
-      process.exit(rfzfesult.code);
+    if (!fzfresult || fzfresult.code !== 0) {
+      return [];
     }
-    let repoSpec =  fzfresult.stdout.replace(/\s+$/,'').split(/\s+/).join(',');
+    // console.log(`"${fzfresult}"`);
+    let repoList =  fzfresult.stdout.replace(/\s+$/,'').split(/\s+/);
+    let repoSpec =  repoList.join(',');
     //console.log(`----\n${repoSpec}\n----`);
     return repoSpec;
   }
@@ -156,7 +170,7 @@ function getRepoListFromAPISearch(search, org) {
 
   try {
     if (search === ".") {
-      return fzfGetRepos(org);
+      return fzfGetRepos(org, regexp);
     } else {
       let queryResult = executeQuery(searchForRepos(search, org));
       let result = queryResult.search.edges.map(r => r.node.name).join(",");
@@ -372,7 +386,7 @@ function getRepoList(options, org) {
   else if (options.file)
     repos = getRepoListFromFile(options.file);
   else if (options.search) {
-    repos = getRepoListFromAPISearch(options.search, org);
+    repos = getRepoListFromAPISearch(options, org);
   }
   else {
     repos = getRepoListFromAPISearch('.', org);
