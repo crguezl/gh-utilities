@@ -8,7 +8,7 @@ const fs = require("fs");
 const shell = require('shelljs');
 const path = require('path');
 
-const concurrently = 'npx concurrently';
+const concurrently = path.join(__dirname, '/node_modules', '.bin', 'concurrently');
 //console.log(concurrently);
 
 function showError(error) {
