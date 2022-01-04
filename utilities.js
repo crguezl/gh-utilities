@@ -95,6 +95,7 @@ function setDefaultOrg(org) {
 }
 exports.setDefaultOrg = setDefaultOrg;
 
+// Makes a paginated query and returns an array with the name of the repos 
 function executeQuery(query) {
   //console.log(`executeQuery`)
   let command = `gh api graphql --paginate -f query='${query}'`;
@@ -118,9 +119,11 @@ function executeQuery(query) {
     //console.log(chunkInfo);
     let currentObj = JSON.parse('{'+chunkInfo.body+'}');
     //console.log(ins(currentObj, {depth:null})); 
+
     if (currentObj.data && currentObj.data.organization)
       result = result.concat(currentObj.data.organization.repositories.edges);  
     else result = result.concat(currentObj.data.search.edges);
+    
     rout = chunkInfo.post;
   }
   //dummy.data.organization.repositories.edges = result;
@@ -134,83 +137,84 @@ function executeQuery(query) {
   return result;
 }
 
+const allRepos = (org) => `
+query($endCursor: String) {
+  organization(login: "${org}") {
+    repositories(first: 100, after: $endCursor) {
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node  {
+          name
+        }
+      }
+    }
+  }
+}
+`;
+
+function fzfGetRepos(org, regexp) {
+  /*
+  let command = `gh repo list -L100 ${org} --json name --jq '.[] | .name' | fzf -m`;
+  let result = shell.exec(command, { silent: false });
+  if (result.code !== 0) process.exit(result.code);
+  return result.stdout.replace(/\s+$/,'')  
+  */
+
+  let result = executeQuery(allRepos(org));
+  //console.log(`Inside fzfGetRepos(${org}, ${regexp}) called executeQuery. Result = ${ins(result, { depth: null})}`);
+
+  if (regexp) {
+    regexp = new RegExp(regexp,'i');
+    result = result.filter(rn => {
+      return regexp.test(rn)
+    });  
+  }
+
+  result = result.join("\n");
+
+  const name = tmp.tmpNameSync();
+  fs.writeFileSync(name, result)
+
+  //console.log('Created temporary filename: ', name);
+  let command = `cat ${name} | fzf -m --bind 'ctrl-a:toggle-all' --prompt='${org}:Use tab to choose repos to download> ' --layout=reverse --border`;
+  let fzfresult = shell.exec(command, { silent: false });
+  console.clear();
+
+  if (!fzfresult || fzfresult.code !== 0) {
+    return [];
+  }
+  // console.log(`"${fzfresult}"`);
+  let repoList =  fzfresult.stdout.replace(/\s+$/,'').split(/\s+/);
+  let repoSpec =  repoList.join(',');
+  //console.log(`----\n${repoSpec}\n----`);
+  return repoSpec;
+}
+
+const searchForRepos = (search, org) => `
+query($endCursor: String) {
+  search(type: REPOSITORY, query: "org:${org} ${search} in:name", first: 100, after: $endCursor) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    edges {
+      node {
+        ... on Repository {
+          name
+        }
+      }
+    }
+  }
+}
+`
+
 function getRepoListFromAPISearch(options, org) {
   let search = options.search;
   let regexp = options.regexp;
   //let query;
-  const allRepos = (org) => `
-  query($endCursor: String) {
-    organization(login: "${org}") {
-      repositories(first: 100, after: $endCursor) {
-        pageInfo {
-          endCursor
-          hasNextPage
-        }
-        edges {
-          node  {
-            name
-          }
-        }
-      }
-    }
-  }
-  `
-  const searchForRepos = (search, org) => `
-  query($endCursor: String) {
-    search(type: REPOSITORY, query: "org:${org} ${search} in:name", first: 100, after: $endCursor) {
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-      edges {
-        node {
-          ... on Repository {
-            name
-          }
-        }
-      }
-    }
-  }
-  `
-
-  function fzfGetRepos(org, regexp) {
-    /*
-    let command = `gh repo list -L100 ${org} --json name --jq '.[] | .name' | fzf -m`;
-    let result = shell.exec(command, { silent: false });
-    if (result.code !== 0) process.exit(result.code);
-    return result.stdout.replace(/\s+$/,'')  
-    */
-  
-    let result = executeQuery(allRepos(org));
-    //console.log(`Inside fzfGetRepos(${org}, ${regexp}) called executeQuery. Result = ${ins(result, { depth: null})}`);
-
-    if (regexp) {
-      regexp = new RegExp(regexp,'i');
-      result = result.filter(rn => {
-        return regexp.test(rn)
-      });  
-    }
-
-    result = result.join("\n");
-
-    const name = tmp.tmpNameSync();
-    fs.writeFileSync(name, result)
-
-    //console.log('Created temporary filename: ', name);
-    let command = `cat ${name} | fzf -m --bind 'ctrl-a:toggle-all' --prompt='${org}:Use tab to choose repos to download> ' --layout=reverse --border`;
-    let fzfresult = shell.exec(command, { silent: false });
-    console.clear();
-
-    if (!fzfresult || fzfresult.code !== 0) {
-      return [];
-    }
-    // console.log(`"${fzfresult}"`);
-    let repoList =  fzfresult.stdout.replace(/\s+$/,'').split(/\s+/);
-    let repoSpec =  repoList.join(',');
-    //console.log(`----\n${repoSpec}\n----`);
-    return repoSpec;
-  }
-  
 
   //console.log('getRepoListFromAPISearch '+search+" "+org)
   if (!org) {
