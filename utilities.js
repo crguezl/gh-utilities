@@ -95,6 +95,44 @@ function setDefaultOrg(org) {
 }
 exports.setDefaultOrg = setDefaultOrg;
 
+function executeQuery(query) {
+  //console.log(`executeQuery`)
+  let command = `gh api graphql --paginate -f query='${query}'`;
+  //console.log(command);
+
+  let queryResult = shell.exec(command, { silent: true });
+  if (queryResult.code !== 0 || queryResult.length === 0) {
+    console.error(`No repos found in org "${org}" matching query "${search}"`)
+    process.exit(1);
+  }
+
+  /**************************/
+  let rout = queryResult.stdout;
+
+  //console.log(rout);
+
+  let chunkInfo; //, dummy = { data:  { organization: { repositories: { edges: []}}}};
+  let result = [];
+
+  while (chunkInfo = balanced('{', '}', rout)) {
+    //console.log(chunkInfo);
+    let currentObj = JSON.parse('{'+chunkInfo.body+'}');
+    //console.log(ins(currentObj, {depth:null})); 
+    if (currentObj.data && currentObj.data.organization)
+      result = result.concat(currentObj.data.organization.repositories.edges);  
+    else result = result.concat(currentObj.data.search.edges);
+    rout = chunkInfo.post;
+  }
+  //dummy.data.organization.repositories.edges = result;
+  //console.log(ins(result, {depth:null}));
+  //console.log(typeof result);
+   
+  result = result.map(x => x.node.name);
+  
+  //console.log(ins(result, {depth:null}));
+ 
+  return result;
+}
 
 function getRepoListFromAPISearch(options, org) {
   let search = options.search;
@@ -135,38 +173,6 @@ function getRepoListFromAPISearch(options, org) {
   }
   `
 
-  function executeQuery(query) {
-    let command = `gh api graphql --paginate -f query='${query}'`;
-    //console.log(command);
-
-    let queryResult = shell.exec(command, { silent: true });
-    if (queryResult.code !== 0 || queryResult.length === 0) {
-      console.error(`No repos found in org "${org}" matching query "${search}"`)
-      process.exit(1);
-    }
-
-    /**************************/
-    let rout = queryResult.stdout;
-
-    //console.log(rout);
-
-    let chunkInfo, dummy = { data:  { organization: { repositories: { edges: []}}}};
-    let result = [];
-
-    while (chunkInfo = balanced('{', '}', rout)) {
-      //console.log(chunkInfo);
-      let currentObj = JSON.parse('{'+chunkInfo.body+'}');
-      //console.log(currentObj); 
-      result = result.concat(currentObj.data.organization.repositories.edges);  
-      rout = chunkInfo.post;
-    }
-    dummy.data.organization.repositories.edges = result;
-    //console.log(ins(dummy, {depth:null}));
-    //process.exit(0);
-
-    return dummy.data;
-  }
-
   function fzfGetRepos(org, regexp) {
     /*
     let command = `gh repo list -L100 ${org} --json name --jq '.[] | .name' | fzf -m`;
@@ -175,8 +181,7 @@ function getRepoListFromAPISearch(options, org) {
     return result.stdout.replace(/\s+$/,'')  
     */
   
-    let queryResult = executeQuery(allRepos(org));
-    let result = queryResult.organization.repositories.edges.map(r => r.node.name);
+    let result = executeQuery(allRepos(org));
     //console.log(`Inside fzfGetRepos(${org}, ${regexp}) called executeQuery. Result = ${ins(result, { depth: null})}`);
 
     if (regexp) {
@@ -217,18 +222,13 @@ function getRepoListFromAPISearch(options, org) {
     if (search === ".") {
       return fzfGetRepos(org, regexp);
     } else {
-      let queryResult = executeQuery(searchForRepos(search, org));
-      let result = queryResult.search.edges.map(r => r.node.name).join(",");
-
+      let result = executeQuery(searchForRepos(search, org));
       //console.log(result)
-      return result;
-
+      return result.join(",");
     }
-
   } catch (error) {
     console.error(`${error}: No repos found in org "${org}" matching query "${search}"`)
   }
-
 }
 
 /* REST version
@@ -444,7 +444,8 @@ function getRepoList(options, org) {
     repos = getRepoListFromAPISearch(options, org);
   }
   else {
-    repos = getRepoListFromAPISearch('.', org);
+    options.search = '.';
+    repos = getRepoListFromAPISearch(options, org);
   }
   repos = (repos && repos.length) ? repos.split(/\s*,\s*/) : [];
   repos = addImplicitOrgIfNeeded(repos, org);
