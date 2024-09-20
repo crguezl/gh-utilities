@@ -213,9 +213,9 @@ function fzfGetRepos(org, regexp) {
   return repoSpec;
 }
 
-const searchForRepos = (search, org) => `
+const searchForRepos = (search, org, includeForks) => `
 query($endCursor: String) {
-  search(type: REPOSITORY, query: "org:${org} ${search} in:name", first: 100, after: $endCursor) {
+  search(type: REPOSITORY, query: "org:${org} ${search} in:name fork:${includeForks}", first: 100, after: $endCursor) {
     pageInfo {
       hasNextPage
       endCursor
@@ -246,7 +246,8 @@ function getRepoListFromAPISearch(options, org) {
     if (search === ".") {
       return fzfGetRepos(org, regexp);
     } else {
-      let result = executeQuery(searchForRepos(search, org));
+      let includeForks = options.fork || "true";
+      let result = executeQuery(searchForRepos(search, org, includeForks));
       //console.log(result)
       return result.join(",");
     }
